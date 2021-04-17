@@ -34,6 +34,8 @@
 #include <linux/route.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/random.h>
+#include <linux/pdm.h>
 
 #include <linux/bpf-cgroup.h>
 #include <linux/netfilter.h>
@@ -55,6 +57,7 @@
 #include <net/l3mdev.h>
 #include <net/lwtunnel.h>
 #include <net/ip_tunnels.h>
+#include <net/pdm.h>
 
 static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
@@ -300,7 +303,23 @@ int ip6_xmit(const struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
 		IP6CB(skb)->flags |= IP6SKB_FAKEJUMBO;
 	}
 
-	skb_push(skb, sizeof(struct ipv6hdr));
+	/* TODO: How to add PDMv2 enable condition with a single `if`? */
+	if (net->ipv6.sysctl.pdm_enabled)
+	{
+		int pdm_inc_len;
+		if (!net->ipv6.sysctl.pdm_encrypt)
+			pdm_inc_len = 24;
+		else
+			pdm_inc_len = 40;
+
+		skb_cow(skb, skb_headroom(skb) + pdm_inc_len);
+		skb_push(skb, sizeof(struct ipv6hdr) + pdm_inc_len);
+		seg_len += pdm_inc_len;
+	}
+	else
+	{
+		skb_push(skb, sizeof(struct ipv6hdr));
+	}
 	skb_reset_network_header(skb);
 	hdr = ipv6_hdr(skb);
 
@@ -321,6 +340,12 @@ int ip6_xmit(const struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
 
 	hdr->saddr = fl6->saddr;
 	hdr->daddr = *first_hop;
+
+	if (net->ipv6.sysctl.pdm_enabled)
+	{
+		hdr->nexthdr = NEXTHDR_DEST;
+		pdm6_insert (skb, net, fl6);
+	}
 
 	skb->protocol = htons(ETH_P_IPV6);
 	skb->priority = priority;
@@ -1907,7 +1932,21 @@ struct sk_buff *__ip6_make_skb(struct sock *sk,
 	if (opt && opt->opt_nflen)
 		ipv6_push_nfrag_opts(skb, opt, &proto, &final_dst, &fl6->saddr);
 
-	skb_push(skb, sizeof(struct ipv6hdr));
+	/* TODO: How to add PDMv2 enable condition with a single `if`? */
+	if (net->ipv6.sysctl.pdm_enabled)
+	{
+		int pdm_inc_len;
+		if (!net->ipv6.sysctl.pdm_encrypt)
+			pdm_inc_len = 24;
+		else
+			pdm_inc_len = 40;
+		skb_cow(skb, skb_headroom(skb) + pdm_inc_len);
+		skb_push(skb, sizeof(struct ipv6hdr) + pdm_inc_len);
+	}
+	else
+	{
+		skb_push(skb, sizeof(struct ipv6hdr));
+	}
 	skb_reset_network_header(skb);
 	hdr = ipv6_hdr(skb);
 
@@ -1918,6 +1957,12 @@ struct sk_buff *__ip6_make_skb(struct sock *sk,
 	hdr->nexthdr = proto;
 	hdr->saddr = fl6->saddr;
 	hdr->daddr = *final_dst;
+
+	if (net->ipv6.sysctl.pdm_enabled)
+	{
+		hdr->nexthdr = NEXTHDR_DEST;
+		pdm6_insert(skb, net, fl6);
+	}
 
 	skb->priority = sk->sk_priority;
 	skb->mark = cork->base.mark;

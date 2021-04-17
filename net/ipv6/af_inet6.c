@@ -38,6 +38,7 @@
 #include <linux/inet.h>
 #include <linux/netdevice.h>
 #include <linux/icmpv6.h>
+#include <linux/pdm.h>
 #include <linux/netfilter_ipv6.h>
 
 #include <net/ip.h>
@@ -58,6 +59,7 @@
 #include <net/ip6_tunnel.h>
 #endif
 #include <net/calipso.h>
+#include <net/pdm.h>
 #include <net/seg6.h>
 #include <net/rpl.h>
 #include <net/compat.h>
@@ -976,6 +978,10 @@ static int __net_init inet6_net_init(struct net *net)
 
 	net->ipv6.sysctl.ioam6_id = IOAM6_DEFAULT_ID;
 	net->ipv6.sysctl.ioam6_id_wide = IOAM6_DEFAULT_ID_WIDE;
+	/* PDM parameters */
+	net->ipv6.sysctl.pdm_enabled = IP6_PDM_DEFAULT_MODE;
+	net->ipv6.sysctl.pdm_version = IP6_PDM_DEFAULT_VERSION;
+	net->ipv6.sysctl.pdm_version = IP6_PDM_DEFAULT_ENCRYPT;
 
 	err = ipv6_init_mibs(net);
 	if (err)
@@ -1173,6 +1179,10 @@ static int __init inet6_init(void)
 	if (err)
 		goto ipv6_frag_fail;
 
+	err = pdm_init();
+	if (err)
+		goto pdm_fail;
+
 	/* Init v6 transport protocols. */
 	err = udpv6_init();
 	if (err)
@@ -1256,6 +1266,8 @@ udpv6_offload_fail:
 udplitev6_fail:
 	udpv6_exit();
 udpv6_fail:
+	pdm_cleanup();
+pdm_fail:
 	ipv6_frag_exit();
 ipv6_frag_fail:
 	ipv6_exthdrs_exit();

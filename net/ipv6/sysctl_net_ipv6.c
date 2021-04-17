@@ -18,6 +18,7 @@
 #include <net/inet_frag.h>
 #include <net/netevent.h>
 #include <net/ip_fib.h>
+#include <net/pdm.h>
 #ifdef CONFIG_NETLABEL
 #include <net/calipso.h>
 #endif
@@ -256,6 +257,7 @@ static int __net_init ipv6_sysctl_net_init(struct net *net)
 	struct ctl_table *ipv6_table;
 	struct ctl_table *ipv6_route_table;
 	struct ctl_table *ipv6_icmp_table;
+	struct ctl_table *ipv6_pdm_table;
 	int err, i;
 
 	err = -ENOMEM;
@@ -275,9 +277,13 @@ static int __net_init ipv6_sysctl_net_init(struct net *net)
 	if (!ipv6_icmp_table)
 		goto out_ipv6_route_table;
 
+	ipv6_pdm_table = ipv6_pdm_sysctl_init(net);
+	if (!ipv6_pdm_table)
+		goto out_ipv6_icmp_table;
+
 	net->ipv6.sysctl.hdr = register_net_sysctl(net, "net/ipv6", ipv6_table);
 	if (!net->ipv6.sysctl.hdr)
-		goto out_ipv6_icmp_table;
+		goto out_ipv6_pdm_table;
 
 	net->ipv6.sysctl.route_hdr =
 		register_net_sysctl(net, "net/ipv6/route", ipv6_route_table);
@@ -289,13 +295,22 @@ static int __net_init ipv6_sysctl_net_init(struct net *net)
 	if (!net->ipv6.sysctl.icmp_hdr)
 		goto out_unregister_route_table;
 
+	net->ipv6.sysctl.pdm_hdr =
+		register_net_sysctl(net, "net/ipv6/pdm", ipv6_pdm_table);
+	if (!net->ipv6.sysctl.pdm_hdr)
+		goto out_unregister_icmp_table;
+
 	err = 0;
 out:
 	return err;
+out_unregister_icmp_table:
+	unregister_net_sysctl_table(net->ipv6.sysctl.icmp_hdr);
 out_unregister_route_table:
 	unregister_net_sysctl_table(net->ipv6.sysctl.route_hdr);
 out_unregister_ipv6_table:
 	unregister_net_sysctl_table(net->ipv6.sysctl.hdr);
+out_ipv6_pdm_table:
+	kfree(ipv6_pdm_table);
 out_ipv6_icmp_table:
 	kfree(ipv6_icmp_table);
 out_ipv6_route_table:
@@ -310,11 +325,14 @@ static void __net_exit ipv6_sysctl_net_exit(struct net *net)
 	struct ctl_table *ipv6_table;
 	struct ctl_table *ipv6_route_table;
 	struct ctl_table *ipv6_icmp_table;
+	struct ctl_table *ipv6_pdm_table;
 
 	ipv6_table = net->ipv6.sysctl.hdr->ctl_table_arg;
 	ipv6_route_table = net->ipv6.sysctl.route_hdr->ctl_table_arg;
 	ipv6_icmp_table = net->ipv6.sysctl.icmp_hdr->ctl_table_arg;
+	ipv6_pdm_table = net->ipv6.sysctl.pdm_hdr->ctl_table_arg;
 
+	unregister_net_sysctl_table(net->ipv6.sysctl.pdm_hdr);
 	unregister_net_sysctl_table(net->ipv6.sysctl.icmp_hdr);
 	unregister_net_sysctl_table(net->ipv6.sysctl.route_hdr);
 	unregister_net_sysctl_table(net->ipv6.sysctl.hdr);
@@ -322,6 +340,7 @@ static void __net_exit ipv6_sysctl_net_exit(struct net *net)
 	kfree(ipv6_table);
 	kfree(ipv6_route_table);
 	kfree(ipv6_icmp_table);
+	kfree(ipv6_pdm_table);
 }
 
 static struct pernet_operations ipv6_sysctl_net_ops = {

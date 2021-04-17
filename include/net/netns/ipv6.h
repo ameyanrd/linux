@@ -17,6 +17,7 @@ struct netns_sysctl_ipv6 {
 	struct ctl_table_header *hdr;
 	struct ctl_table_header *route_hdr;
 	struct ctl_table_header *icmp_hdr;
+	struct ctl_table_header *pdm_hdr;
 	struct ctl_table_header *frags_hdr;
 	struct ctl_table_header *xfrm6_hdr;
 #endif
@@ -55,6 +56,9 @@ struct netns_sysctl_ipv6 {
 	u64 ioam6_id_wide;
 	bool skip_notify_on_dev_down;
 	u8 fib_notify_on_flag_change;
+	int pdm_enabled;
+	int pdm_version;
+	int pdm_encrypt;
 };
 
 struct netns_ipv6 {

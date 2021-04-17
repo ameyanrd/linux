@@ -25,6 +25,7 @@
 #include <linux/netdevice.h>
 #include <linux/in6.h>
 #include <linux/icmpv6.h>
+#include <linux/pdm.h>
 #include <linux/slab.h>
 #include <linux/export.h>
 
@@ -40,6 +41,7 @@
 #include <net/ip6_route.h>
 #include <net/addrconf.h>
 #include <net/calipso.h>
+#include <net/pdm.h>
 #if IS_ENABLED(CONFIG_IPV6_MIP6)
 #include <net/xfrm.h>
 #endif
@@ -107,6 +109,7 @@ static bool ipv6_hop_calipso(struct sk_buff *skb, int optoff);
 #if IS_ENABLED(CONFIG_IPV6_MIP6)
 static bool ipv6_dest_hao(struct sk_buff *skb, int optoff);
 #endif
+static bool ipv6_dest_pdm(struct sk_buff *skb, int optoff);
 
 /* Parse tlv encoded option header (hop-by-hop or destination) */
 
@@ -203,6 +206,12 @@ static bool ip6_parse_tlv(bool hopbyhop,
 						return false;
 					break;
 #endif
+
+				case IPV6_TLV_PDM:
+					if (!ipv6_dest_pdm(skb, off))
+						return false;
+					break;
+
 				default:
 					if (!ip6_tlvopt_unknown(skb, off,
 								disallow_unknowns))
@@ -291,6 +300,41 @@ static bool ipv6_dest_hao(struct sk_buff *skb, int optoff)
 	return false;
 }
 #endif
+
+static bool ipv6_dest_pdm(struct sk_buff *skb, int optoff)
+{
+	struct ipv6_destopt_pdm *pdm;
+	struct net *net = dev_net(skb->dev);
+
+	pdm = (struct ipv6_destopt_pdm *)(skb_network_header(skb) + optoff);
+
+	if (pdm->length != 18 && pdm->length != 34) {
+		net_dbg_ratelimited("pdm invalid option length = %d\n",
+				    pdm->length);
+		goto discard;
+	}
+
+	if (net->ipv6.sysctl.pdm_enabled)
+	{
+		struct pdm_state *state;
+		state = get_state (skb, true, net, NULL);
+
+		pr_info("PDM received>>>>>>>>>>>>>>>>");
+
+		if (!state->received_once)
+		{
+			state->received_once = true;
+		}
+		state->PSNLR = ntohs (pdm->PSNTP);
+		ktime_get_ts64 (&(state->last_received));
+		pr_info ("last_received time = %ld\n", (state->last_received).tv_nsec);
+	}
+	return true;
+
+discard:
+	kfree_skb(skb);
+	return false;
+}
 
 static int ipv6_destopt_rcv(struct sk_buff *skb)
 {
